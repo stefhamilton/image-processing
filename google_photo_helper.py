@@ -11,6 +11,7 @@ from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 import configparser
 
 
+
 # Existing imports and functions ...
 # Set up Google Photos API credentials
 def get_google_photos_credentials():
@@ -85,7 +86,11 @@ def get_photos_metadata(service, start_time, end_time):
 
 
 # Upload JSON files to Azure Blob Storage
-def upload_to_azure_blob(photos_metadata):
+def upload_to_azure_blob(photos_metadata, csv_name):
+    import pandas as pd
+    from azure.storage.blob import BlobServiceClient, BlobClient
+
+    # Read the Azure connection string from the config file
     config = configparser.ConfigParser()
     config.read('config.ini')
     connection_string = config.get('DEFAULT', 'azure_connection_string')
@@ -93,24 +98,49 @@ def upload_to_azure_blob(photos_metadata):
     # Initialize the BlobServiceClient with your connection string
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
 
-    # Create a new container if it does not exist
-    container_name = "photos-metadata"
+    # Set the name of the Blob storage container and the CSV file name
+    container_name = "photos-metadata2"
+
+    # Get a reference to the container client
     container_client = blob_service_client.get_container_client(container_name)
 
+    # Create the container if it does not exist
     if not container_client.exists():
-        container_client = blob_service_client.create_container(container_name)
+        container_client.create_container()
 
-    # Upload the JSON files
+    # Remove unwanted attributes from photos_metadata
     for photo in photos_metadata:
-        blob_name = f"{photo['id']}.json"
-        blob_client = container_client.get_blob_client(blob_name)
+        del photo['productUrl']
+        del photo['baseUrl']
+        del photo['mimeType']
+        del photo['mediaMetadata']['photo']
+        del photo['filename']
 
-        # Convert the photo metadata to JSON
-        photo_json = json.dumps(photo)
+    # Convert the JSON data to a Pandas DataFrame
+    df = pd.json_normalize(photos_metadata)
 
-        # Upload the JSON file
-        blob_client.upload_blob(photo_json, overwrite=True)
-        print(f"Uploaded {blob_name} to {container_name} container in Azure Blob Storage.")
+    # Split the DataFrame into chunks of 100 rows each
+    chunks = [df[i:i+100] for i in range(0, len(df), 100)]
+
+
+    # Loop through the chunks and upload each one to Azure Blob Storage
+    for i, chunk in enumerate(chunks):
+        # Construct the file name for this chunk
+        chunk_name = f"{csv_name.replace('.csv','')}_{i}.csv"
+
+        # Convert the chunk to CSV and encode as bytes
+        chunk_csv = chunk.to_csv(index=False).encode()
+
+        # Upload the chunk to Azure Blob Storage
+        blob_client = container_client.get_blob_client(chunk_name)
+        blob_client.upload_blob(chunk_csv, overwrite=True)
+
+        # Print a message indicating that the chunk was uploaded
+        print(f"Uploaded {chunk_name} to {container_name} container in Azure Blob Storage.")
+
+    # Print a message indicating that all chunks were uploaded
+    print(f"All chunks of {csv_name} have been uploaded to {container_name} container in Azure Blob Storage.")
+
 
 if __name__ == "__main__":
     # Authenticate and build the Google Photos API client
@@ -118,14 +148,15 @@ if __name__ == "__main__":
     photos_service = build("photoslibrary", "v1", credentials=creds, static_discovery=False)
 
     # Define the time range for the Google Photos metadata
-    start_time = datetime.datetime.now() - datetime.timedelta(days=2)
+    start_time = datetime.datetime.now() - datetime.timedelta(days=14)
     end_time = datetime.datetime.now()
 
     # Get the metadata of photos in the specified time range
     photos_metadata = get_photos_metadata(photos_service, start_time, end_time)
 
     if photos_metadata:
+        csv_name = f"{start_time}-{end_time}.csv"
         # Upload the metadata to Azure Blob Storage
-        upload_to_azure_blob(photos_metadata)
+        upload_to_azure_blob(photos_metadata,csv_name)
     else:
         print("No photos found in the specified time range.")
