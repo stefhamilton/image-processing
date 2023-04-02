@@ -2,41 +2,65 @@ import os
 import json
 import datetime
 import sys
-print(sys.executable)
 from google.oauth2 import credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 import configparser
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+import webbrowser
 
+def get_refresh_token(client_secret_file, scopes):
+    flow = InstalledAppFlow.from_client_secrets_file(client_secret_file, scopes)
+    credentials = flow.run_local_server(port=0)
+    return credentials.refresh_token
 
+def store_refresh_token(refresh_token, refresh_token_file):
+    with open(refresh_token_file, "w") as f:
+        json.dump({"refresh_token": refresh_token}, f)
 
-# Existing imports and functions ...
-# Set up Google Photos API credentials
 def get_google_photos_credentials():
     SCOPES = [
         "https://www.googleapis.com/auth/photoslibrary.readonly",
         "https://www.googleapis.com/auth/bigquery",
+        "openid",
     ]
 
     creds = None
 
-    if os.path.exists("token.json"):
-        creds = credentials.Credentials.from_authorized_user_file("token.json", SCOPES)
+    client_secret_file = "/Users/stefanhamilton/dev/image-processing/google_meta_2_azure_csv/credentials.json"
+    refresh_token_file = "/Users/stefanhamilton/dev/image-processing/google_meta_2_azure_csv/refresh_token.json"
+
+    if os.path.exists(refresh_token_file):
+        print("Getting credentials from refresh token")
+        with open(refresh_token_file, "r") as f:
+            refresh_token_data = json.load(f)
+            refresh_token = refresh_token_data.get("refresh_token")
+
+        if refresh_token:
+            with open(client_secret_file, "r") as f:
+                client_secret_data = json.load(f)
+                client_id = client_secret_data["installed"]["client_id"]
+                client_secret = client_secret_data["installed"]["client_secret"]
+
+            creds = Credentials.from_authorized_user_info(info={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token
+            }, scopes=SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
+            print("Refreshing token")
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server(port=0)
-
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
+            # No refresh token found, prompt the user to get a new one
+            print("No valid refresh token found, please generate a new one")
 
     return creds
-# Fetch Google Photos metadata
+# Rest of the code remains the same
+
 def get_photos_metadata(service, start_time, end_time):
     try:
         next_page_token = None
@@ -84,7 +108,6 @@ def get_photos_metadata(service, start_time, end_time):
         print(f"An error occurred: {error}")
         return None
 
-
 # Upload JSON files to Azure Blob Storage
 def upload_to_azure_blob(photos_metadata, csv_name):
     import pandas as pd
@@ -92,7 +115,7 @@ def upload_to_azure_blob(photos_metadata, csv_name):
 
     # Read the Azure connection string from the config file
     config = configparser.ConfigParser()
-    config.read('config.ini')
+    config.read('/Users/stefanhamilton/dev/image-processing/config.ini')
     connection_string = config.get('DEFAULT', 'azure_connection_string')
 
     # Initialize the BlobServiceClient with your connection string
@@ -143,20 +166,26 @@ def upload_to_azure_blob(photos_metadata, csv_name):
 
 
 if __name__ == "__main__":
-    # Authenticate and build the Google Photos API client
-    creds = get_google_photos_credentials()
-    photos_service = build("photoslibrary", "v1", credentials=creds, static_discovery=False)
+    try:
+        # Authenticate and build the Google Photos API client
+        print("Getting google creds")
+        creds = get_google_photos_credentials()
+        print("creating photos service")
+        photos_service = build("photoslibrary", "v1", credentials=creds, static_discovery=False)
 
-    # Define the time range for the Google Photos metadata
-    start_time = datetime.datetime.now() - datetime.timedelta(days=14)
-    end_time = datetime.datetime.now()
+        # Define the time range for the Google Photos metadata
+        start_time = datetime.datetime.now() - datetime.timedelta(hours=1)
+        end_time = datetime.datetime.now()
 
-    # Get the metadata of photos in the specified time range
-    photos_metadata = get_photos_metadata(photos_service, start_time, end_time)
+        # Get the metadata of photos in the specified time range
+        print("getting photos metadata")
+        photos_metadata = get_photos_metadata(photos_service, start_time, end_time)
 
-    if photos_metadata:
-        csv_name = f"{start_time}-{end_time}.csv"
-        # Upload the metadata to Azure Blob Storage
-        upload_to_azure_blob(photos_metadata,csv_name)
-    else:
-        print("No photos found in the specified time range.")
+        if photos_metadata:
+            csv_name = f"{start_time}-{end_time}.csv"
+            # Upload the metadata to Azure Blob Storage
+            upload_to_azure_blob(photos_metadata, csv_name)
+        else:
+            print("No photos found in the specified time range.")
+    except Exception as e:
+        print(e)
