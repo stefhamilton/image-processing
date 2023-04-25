@@ -17,8 +17,8 @@ if __name__ == "__main__":
         "openid",
     ]
     
-    client_secret_file = "/Users/stefanhamilton/dev/image-processing/google_meta_2_azure_csv/credentials.json"
-    refresh_token_file = "/Users/stefanhamilton/dev/image-processing/google_meta_2_azure_csv/refresh_token.json"
+    client_secret_file = "/Users/stefanhamilton/dev/image-processing/scripts/credentials.json"
+    refresh_token_file = "/Users/stefanhamilton/dev/image-processing/scripts/refresh_token.json"
     
     refresh_token = get_refresh_token(client_secret_file, SCOPES)
     store_refresh_token(refresh_token, refresh_token_file)
