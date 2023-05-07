@@ -1,27 +1,31 @@
 import os
 import exifread
+from svg_pins import create_svg_pin
+from azure_helper import upload_file_to_azure
+from xml.dom.minidom import Document
+from PIL import Image
+import exifread
+import piexif
 
 # Change these
 image_folder = "album/15 cameras Stargazer Farm"
+azure_config = '/Users/stefanhamilton/dev/image-processing/azure_blob_wblms_config.ini'
 
 # This corresponds to red, green, blue, transparency with a max of 256
 # Use this to select colors https://rgbacolorpicker.com/rgba-to-hex
+# To Do: This doesn't work - probably since css isn't fully supported
 marker_color = (211, 211, 211) # light gray
 marker_color = (173, 216, 230) # light blue
-marker_transparency = 0.5
+marker_opacity = 0.4 # a low value is transparent
 
 # Do not change these
 placemark_prefix = "C"
 album_name = os.path.basename(os.path.normpath(image_folder))
 azure_folder = f"stargazermedia/{image_folder}/"
 output_file = image_folder+f"/{album_name}.kml"
-azure_config = '/Users/stefanhamilton/dev/image-processing/azure_blob_wblms_config.ini'
-from PIL import Image
 
-import exifread
-import piexif
-
-from fractions import Fraction
+png_path = create_svg_pin(image_folder, marker_color,marker_opacity)
+png_url = upload_file_to_azure(png_path, f"{azure_folder}{os.path.basename(png_path)}", azure_config, make_public=True)
 
 def rotate_image_to_orientation(image_path):
     # Open the image and read its EXIF data
@@ -71,11 +75,6 @@ def parse_fraction(fraction_str):
     num, den = fraction_str.strip("[]").split("/")
     return float(num) / float(den)
 
-from azure_helper import upload_file_to_azure
-
-from xml.dom.minidom import Document
-
-
 def create_placemark_element(doc, placemark_data):
     placemark_element = doc.createElement('Placemark')
 
@@ -100,7 +99,6 @@ def create_name_element(doc, placemark_data):
     name_text_node = doc.createTextNode(name_text)
     name_element.appendChild(name_text_node)
     return name_element
-
 
 def create_description_element(doc, placemark_data):
     description_element = doc.createElement('description')
@@ -130,7 +128,7 @@ def create_style_element(doc, placemark_data):
 def create_icon_style_element(doc, placemark_data):
     icon_style_element = doc.createElement("IconStyle")
 
-    icon_element = create_icon_element(doc, marker_color, marker_transparency)
+    icon_element = create_icon_element(doc)
     icon_style_element.appendChild(icon_element)
 
     hotspot_element = create_hotspot_element(doc)
@@ -142,20 +140,15 @@ def create_icon_style_element(doc, placemark_data):
     return icon_style_element
 
 
-def create_icon_element(doc, marker_color=(255, 255, 255), marker_transparency=1.0):
+def create_icon_element(doc):
     icon_element = doc.createElement("Icon")
 
     href_element = doc.createElement("href")
-    href_text_node = doc.createTextNode("https://stargazerfarmmedia.blob.core.windows.net/stargazermedia/pin_bearing.png")  # Replace with the URL of your custom icon
+    href_text_node = doc.createTextNode(png_url)  
     href_element.appendChild(href_text_node)
     icon_element.appendChild(href_element)
 
-    # Convert color tuple to hex string and append alpha channel in hex format
-    color_hex = '{:02X}{:02X}{:02X}{:02X}'.format(int(marker_transparency * 255), *marker_color)
-    color_element = doc.createElement("color")
-    color_text_node = doc.createTextNode(color_hex)
-    color_element.appendChild(color_text_node)
-    icon_element.appendChild(color_element)
+
 
     return icon_element
 
@@ -226,8 +219,8 @@ for file in os.listdir(image_folder):
             model = str(gps_data.get("Image Model", ""))
             bearing = (float(gps_data["GPS GPSImgDirection"].values[0].num) / gps_data["GPS GPSImgDirection"].values[0].den + rotation_angle) % 360 if "GPS GPSImgDirection" in gps_data else 0
 
-            file_url = upload_file_to_azure(image_path, f"{azure_folder}{file}", azure_config, make_public=True)
-            print(f"Uploaded {file} to Azure Blob Storage: {file_url}")
+            img_url = upload_file_to_azure(image_path, f"{azure_folder}{file}", azure_config, make_public=True)
+            print(f"Uploaded {file} to Azure Blob Storage: {img_url}")
 
             placemarks.append({
                 "latitude": latitude,
@@ -237,7 +230,7 @@ for file in os.listdir(image_folder):
                 "make": make,
                 "model": model,
                 "bearing": bearing,
-                 "file_url": file_url,
+                "file_url": img_url,
             })
 
 if __name__ == "__main__":
