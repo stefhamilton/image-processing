@@ -23,13 +23,7 @@ def store_refresh_token(refresh_token, refresh_token_file):
         json.dump({"refresh_token": refresh_token}, f)
 
 def get_google_photos_credentials(client_secret_file,refresh_token_file, SCOPES):
-
-
-
-
     creds = None
-
-
 
     if os.path.exists(refresh_token_file):
         print("Getting credentials from refresh token")

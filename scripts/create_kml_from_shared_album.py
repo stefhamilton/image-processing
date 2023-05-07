@@ -92,14 +92,18 @@ def download_media_items(service, media_items, output_folder):
 
 
 
-def list_albums(photos_api):
+def list_albums(photos_api, is_shared):
     albums = []
     page_token = None
 
     while True:
         try:
-            response = photos_api.albums().list(pageSize=50, pageToken=page_token).execute()
-            albums.extend(response.get("albums", []))
+            if is_shared:
+                response = photos_api.sharedAlbums().list(pageSize=50, pageToken=page_token).execute()
+                albums.extend(response.get("sharedAlbums", []))
+            else:
+                response = photos_api.albums().list(pageSize=50, pageToken=page_token).execute()
+                albums.extend(response.get("albums", []))
 
             page_token = response.get("nextPageToken")
             if not page_token:
@@ -169,8 +173,6 @@ def update_image_metadata(img_path, json_path, output_folder):
         image.save(os.path.join(output_folder, os.path.basename(img_path)))
 
 
-
-
 def process_folder(folder_path,azure_config):
     # Create the output subfolder if it doesn't exist
     #output_folder = os.path.join(folder_path, 'updated')
@@ -223,31 +225,24 @@ def create_kml_file_with_gps_from_json(folder_path, azure_config, width=400, hei
     tree = ET.ElementTree(kml)
     tree.write(kml_path, xml_declaration=True, encoding='utf-8', method="xml")
 
-
-
 def main():
-    album_title = "10 coffee plants"
-    album_title = "Fields with gps"
-    output_folder = f"/Users/stefanhamilton/dev/image-processing/data/{album_title}"
+    params = {"album_title": "Coffee attack by stem borer", "is_shared":False}
+    output_folder = f"/Users/stefanhamilton/dev/image-processing/data/{params['album_title']}"
     
     azure_config = '/Users/stefanhamilton/dev/image-processing/azure_blob_wblms_config.ini'
-
     
-    #download_from_google(album_title, output_folder)
+    #download_from_google(params['album_title'], output_folder, params['is_shared'])
     
     # Turn on when not debugging
-    #convert_heics_in_folder(output_folder)
+    convert_heics_in_folder(output_folder)
     create_kml_file_with_gps_from_json(output_folder,azure_config)
     #process_folder(output_folder,azure_config)
 
-def download_from_google(album_title, output_folder):
+def download_from_google(album_title, output_folder, is_shared):
     credentials = get_credentials()
     service = build("photoslibrary", "v1", credentials=credentials, static_discovery=False)
-    albums = list_albums(service)
+    albums = list_albums(service, is_shared)
   
-
-
-
     album_id = None
     for album in albums:
         if album["title"] == album_title:

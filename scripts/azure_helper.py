@@ -34,10 +34,11 @@ def upload_file_to_azure(local_path, azure_path, azure_config, make_public=False
     container_client = blob_service_client.get_container_client(container_name)
 
     # Create the container if it doesn't exist
-    try:
-        container_client.create_container()
-    except Exception as e:
-        print(f"Container {container_name} already exists or an error occurred. Error: {str(e)}")
+    #Disabling since this shouldn't be needed
+    # try:
+    #     container_client.create_container()
+    # except Exception as e:
+    #     print(f"Container {container_name} already exists or an error occurred. Error: {str(e)}")
 
     # Instantiate a BlobClient
     blob_client = container_client.get_blob_client(blob_name)
