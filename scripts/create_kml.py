@@ -9,13 +9,15 @@ import piexif
 
 # Change these
 image_folder = "album/15 cameras Stargazer Farm"
+image_folder = "album/State Action State"
 azure_config = '/Users/stefanhamilton/dev/image-processing/azure_blob_wblms_config.ini'
+limit_files = 999
 
 # This corresponds to red, green, blue, transparency with a max of 256
 # Use this to select colors https://rgbacolorpicker.com/rgba-to-hex
 # To Do: This doesn't work - probably since css isn't fully supported
 marker_color = (211, 211, 211) # light gray
-marker_color = (173, 216, 230) # light blue
+marker_color = (225, 219, 65)
 marker_opacity = 0.4 # a low value is transparent
 
 # Do not change these
@@ -31,32 +33,38 @@ def rotate_image_to_orientation(image_path):
     # Open the image and read its EXIF data
     with open(image_path, 'rb') as f:
         tags = exifread.process_file(f, details=False, stop_tag="EXIF Orientation")
-
-    # Extract the orientation metadata
-    orientation = tags.get("Image Orientation", "TopLeft").values[0]
-
+    
     # Open the image using the PIL library
     image = Image.open(image_path)
 
-    # Rotate the image based on the orientation
     rotation_angle = 0
-    if orientation == 3:
-        image = image.rotate(180)
-        rotation_angle = 180
-    elif orientation == 6:
-        image = image.rotate(-90)
-        rotation_angle = -90
-    elif orientation == 8:
-        image = image.rotate(90)
-        rotation_angle = 90
+    try:
+        # Extract the orientation metadata
+        orientation = tags.get("Image Orientation", "TopLeft").values[0]
 
-    # Update the orientation in the EXIF data to "TopLeft" (1)
-    exif_dict = piexif.load(image.info['exif'])
-    exif_dict['0th'][piexif.ImageIFD.Orientation] = 1
-    exif_bytes = piexif.dump(exif_dict)
+        # Rotate the image based on the orientation
+        rotation_angle = 0
+        if orientation == 3:
+            image = image.rotate(180)
+            rotation_angle = 180
+        elif orientation == 6:
+            image = image.rotate(-90)
+            rotation_angle = -90
+        elif orientation == 8:
+            image = image.rotate(90)
+            rotation_angle = 90
+        # No adjustments are needed if rotation angle is 0
+        if rotation_angle ==0:
+            return image, rotation_angle
+        # Update the orientation in the EXIF data to "TopLeft" (1)
+        exif_dict = piexif.load(image.info['exif'])
+        exif_dict['0th'][piexif.ImageIFD.Orientation] = 1
+        exif_bytes = piexif.dump(exif_dict)
 
-    # Save the rotated image to the original file path with the updated EXIF data
-    image.save(image_path, exif=exif_bytes)
+        # Save the rotated image to the original file path with the updated EXIF data
+        image.save(image_path, exif=exif_bytes)
+    except Exception as e:
+        print(f"Error getting rotation for {image_path}: {e}. Skipping")
 
     return image, rotation_angle
 
@@ -78,8 +86,9 @@ def parse_fraction(fraction_str):
 def create_placemark_element(doc, placemark_data):
     placemark_element = doc.createElement('Placemark')
 
-    name_element = create_name_element(doc, placemark_data)
-    placemark_element.appendChild(name_element)
+    # Turn off names since they aren't meaningful
+    # name_element = create_name_element(doc, placemark_data)
+    # placemark_element.appendChild(name_element)
 
     description_element = create_description_element(doc, placemark_data)
     placemark_element.appendChild(description_element)
@@ -201,8 +210,10 @@ def create_kml_file(placemarks, output_file):
         f.write(doc.toprettyxml(indent='  '))
 
 placemarks = []
-
-for file in os.listdir(image_folder):
+missing_gps = 0
+for i, file in enumerate(os.listdir(image_folder)):
+    if i > limit_files:
+        break
 
     if file.lower().endswith(".jpg"):
         image, rotation_angle = rotate_image_to_orientation(image_folder+'/'+file)
@@ -213,12 +224,21 @@ for file in os.listdir(image_folder):
         if "GPS GPSLatitude" in gps_data and "GPS GPSLongitude" in gps_data:
             latitude = float(gps_data["GPS GPSLatitude"].values[0]) + float(gps_data["GPS GPSLatitude"].values[1])/60 + float(gps_data["GPS GPSLatitude"].values[2].num)/gps_data["GPS GPSLatitude"].values[2].den/3600
             longitude = float(gps_data["GPS GPSLongitude"].values[0]) + float(gps_data["GPS GPSLongitude"].values[1])/60 + float(gps_data["GPS GPSLongitude"].values[2].num)/gps_data["GPS GPSLongitude"].values[2].den/3600
-            altitude = parse_fraction(str(gps_data.get("GPS GPSAltitude", "0/1")))
+            try:
+                altitude = parse_fraction(str(gps_data.get("GPS GPSAltitude", "0/1")))
+            except Exception as e:
+                try:
+                    altitude = str(gps_data.get("GPS GPSAltitude"))
+                except:
+                    print(f"Unable to get altitude")
+
             timestamp = str(gps_data.get("Image DateTime", ""))
             make = str(gps_data.get("Image Make", ""))
             model = str(gps_data.get("Image Model", ""))
-            bearing = (float(gps_data["GPS GPSImgDirection"].values[0].num) / gps_data["GPS GPSImgDirection"].values[0].den + rotation_angle) % 360 if "GPS GPSImgDirection" in gps_data else 0
-
+            try:
+                bearing = (float(gps_data["GPS GPSImgDirection"].values[0].num) / gps_data["GPS GPSImgDirection"].values[0].den + rotation_angle) % 360 if "GPS GPSImgDirection" in gps_data else 0
+            except:
+                bearing = 0
             img_url = upload_file_to_azure(image_path, f"{azure_folder}{file}", azure_config, make_public=True)
             print(f"Uploaded {file} to Azure Blob Storage: {img_url}")
 
@@ -232,6 +252,9 @@ for file in os.listdir(image_folder):
                 "bearing": bearing,
                 "file_url": img_url,
             })
+        else:
+            missing_gps +=1
+            print(f"# images missing gps: {missing_gps}. {image} has no gps data")
 
 if __name__ == "__main__":
     create_kml_file(placemarks, output_file)
