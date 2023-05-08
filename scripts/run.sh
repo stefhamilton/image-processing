@@ -1,0 +1,1 @@
+/Users/stefanhamilton/miniconda3/envs/google_photo/bin/python /Users/stefanhamilton/dev/image-processing/google_meta_2_azure_csv/google_photo_helper.py

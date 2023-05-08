@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+.python_packages
+
+/data
+album/*/*.jpg
+album/*/*HEIC*
