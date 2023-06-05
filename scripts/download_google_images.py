@@ -4,17 +4,21 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient import discovery
 from googleapiclient.errors import HttpError
-from google_photo_helper import get_google_photos_credentials
+import sys,os
+# Get the absolute path to the parent directory of the current script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+modules_path = os.path.join(script_dir, "..")
 
-client_secret_file = "/Users/stefanhamilton/dev/image-processing/scripts/credentials_google_admin.json"
-refresh_token_file = "/Users/stefanhamilton/dev/image-processing/scripts/refresh_token_admin.json"
-SCOPES = [
-    "https://www.googleapis.com/auth/photoslibrary.readonly",
-]
-credentials = get_google_photos_credentials(client_secret_file,refresh_token_file, SCOPES)
-service = discovery.build("photoslibrary", "v1", credentials=credentials, static_discovery=False)
+# Add the absolute path to the modules directory to the Python module search path
+sys.path.append(modules_path)
+from modules.google_helper import get_google_photos_credentials, GoogleProfile
+from enum import Enum
 
-def download_images_with_gps_info(output_dir):
+
+from googleapiclient import discovery
+from google.oauth2.credentials import Credentials
+
+def download_images_with_gps_info(output_dir, service):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -50,4 +54,7 @@ def download_images_with_gps_info(output_dir):
             break
 
 output_directory = "data"
-download_images_with_gps_info(output_directory)
+
+gp = GoogleProfile(profile_type=GoogleProfile.ProfileType.ADMIN)
+download_images_with_gps_info(output_directory, gp.photo_service)
+

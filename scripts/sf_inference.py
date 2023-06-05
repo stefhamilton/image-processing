@@ -7,7 +7,7 @@ headers = {
 }
 
 # Open image file in binary mode
-with open('/Users/stefanhamilton/dev/image-processing/album/Coffee Fields/IMG_1068.jpg', 'rb') as f:
+with open('/Users/stefanhamilton/Downloads/Frame_2023-05-22_12-20-59.jpg', 'rb') as f:
     img_data = f.read()
 
 response = requests.post(url, headers=headers, data=img_data)
