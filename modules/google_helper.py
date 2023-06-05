@@ -126,18 +126,9 @@ class GoogleHelper:
 
                 items = results.get("mediaItems", [])
 
-                for item in items:
-                    creation_time = parse(item["mediaMetadata"]["creationTime"])
-
-                    if creation_time < target_date:
-                        items_list.append(item)
-
-                    if limit is not None and len(items_list) >= limit:
-                        return items_list
 
                 self.next_page_token = results.get("nextPageToken")
-                if not self.next_page_token:
-                    break
+                return items
 
             except HttpError as error:
                 print(f"An error occurred: {error}")
@@ -174,6 +165,7 @@ class GoogleHelper:
             downloaded_items.append({"id": item["id"], "file_path": file_path})
 
         return downloaded_items
+
 
 if __name__ == '__main__':
     days = 1
