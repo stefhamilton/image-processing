@@ -1,5 +1,9 @@
 import json
 from google_auth_oauthlib.flow import InstalledAppFlow
+import os
+from dotenv import load_dotenv
+# Load environment variables from .env file
+load_dotenv()
 
 def get_refresh_token(client_secret_file, scopes):
     flow = InstalledAppFlow.from_client_secrets_file(client_secret_file, scopes)
@@ -17,8 +21,8 @@ if __name__ == "__main__":
         "openid",
     ]
     
-    client_secret_file = "/Users/stefanhamilton/dev/image-processing/scripts/credentials.json"
-    refresh_token_file = "/Users/stefanhamilton/dev/image-processing/scripts/refresh_token.json"
+    client_secret_file = os.getenv("CLIENT_SECRET_FILE")
+    refresh_token_file = os.getenv("REFRESH_TOKEN_FILE")
     
     refresh_token = get_refresh_token(client_secret_file, SCOPES)
     store_refresh_token(refresh_token, refresh_token_file)

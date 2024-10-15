@@ -1,16 +1,14 @@
-import os
-import exifread
-from svg_pins import create_svg_pin
-from azure_helper import upload_file_to_azure
+import os,json
+from scripts.svg_pins import create_svg_pin
+from scripts.azure_helper import upload_file_to_azure
 from xml.dom.minidom import Document
 from PIL import Image
 import exifread
 import piexif
 
 # Change these
-image_folder = "album/15 cameras Stargazer Farm"
-image_folder = "album/State Action State"
-azure_config = '/Users/stefanhamilton/dev/image-processing/azure_blob_wblms_config.ini'
+image_folder = "data/harvest-geocache"
+azure_config = 'credentials/azure_config.ini'
 limit_files = 999
 
 # This corresponds to red, green, blue, transparency with a max of 256
@@ -23,7 +21,7 @@ marker_opacity = 0.4 # a low value is transparent
 # Do not change these
 placemark_prefix = "C"
 album_name = os.path.basename(os.path.normpath(image_folder))
-azure_folder = f"stargazermedia/{image_folder}/"
+azure_folder = f"kml-images/{image_folder}/"
 output_file = image_folder+f"/{album_name}.kml"
 
 png_path = create_svg_pin(image_folder, marker_color,marker_opacity)
@@ -40,7 +38,7 @@ def rotate_image_to_orientation(image_path):
     rotation_angle = 0
     try:
         # Extract the orientation metadata
-        orientation = tags.get("Image Orientation", "TopLeft").values[0]
+        orientation = tags.get("Image Orientation", "TopLeft")
 
         # Rotate the image based on the orientation
         rotation_angle = 0
@@ -68,16 +66,35 @@ def rotate_image_to_orientation(image_path):
 
     return image, rotation_angle
 
-def get_gps_data(image_path):
-    with open(image_path, 'rb') as f:
-        tags = exifread.process_file(f, details=False)
+def get_gps_data_from_json(json_path):
+    """Extract GPS and image metadata from the provided JSON file."""
+    
+    # Check if the JSON file exists
+    if not os.path.exists(json_path):
+        print(f"No JSON file found at {json_path}")
+        return {}
 
-    gps_data = {}
-    for tag, value in tags.items():
-        if "GPS" in tag or tag in ["Image Make", "Image Model", "Image DateTime", "Image Orientation"]:
-            gps_data[tag] = value
+    try:
+        # Open and load the JSON file
+        with open(json_path, 'r') as json_file:
+            metadata = json.load(json_file)
+        
+        # Create a dictionary similar to what was extracted from EXIF tags
+        gps_data = {
+            "GPSLatitude": metadata["geoData"]["latitude"],
+            "GPSLongitude": metadata["geoData"]["longitude"],
+            "GPSAltitude": metadata["geoData"].get("altitude", 0),
+            "GPSImgDirection": metadata["geoData"].get("direction", 0),
+            "Image Make": metadata.get("Make", ""),
+            "Image Model": metadata.get("Model", ""),
+            "Image DateTime": metadata.get("DateTime", "")
+        }
 
-    return gps_data
+        return gps_data
+
+    except Exception as e:
+        print(f"Error reading GPS data from JSON at {json_path}: {e}")
+        return {}
 
 def parse_fraction(fraction_str):
     num, den = fraction_str.strip("[]").split("/")
@@ -209,52 +226,50 @@ def create_kml_file(placemarks, output_file):
     with open(output_file, 'w') as f:
         f.write(doc.toprettyxml(indent='  '))
 
-placemarks = []
-missing_gps = 0
-for i, file in enumerate(os.listdir(image_folder)):
-    if i > limit_files:
-        break
+    placemarks = []
+    missing_gps = 0
+    for i, file in enumerate(os.listdir(image_folder)):
+        if i > limit_files:
+            break
 
-    if file.lower().endswith(".jpg"):
-        image, rotation_angle = rotate_image_to_orientation(image_folder+'/'+file)
+        if file.lower().endswith(".jpg"):
+            image, rotation_angle = rotate_image_to_orientation(image_folder+'/'+file)
 
-        image_path = os.path.join(image_folder, file)
-        gps_data = get_gps_data(image_path)
+            image_path = os.path.join(image_folder, file)
+            json_path = image_path.replace(".jpg", ".json")
+            gps_data = get_gps_data_from_json(json_path)
 
-        if "GPS GPSLatitude" in gps_data and "GPS GPSLongitude" in gps_data:
-            latitude = float(gps_data["GPS GPSLatitude"].values[0]) + float(gps_data["GPS GPSLatitude"].values[1])/60 + float(gps_data["GPS GPSLatitude"].values[2].num)/gps_data["GPS GPSLatitude"].values[2].den/3600
-            longitude = float(gps_data["GPS GPSLongitude"].values[0]) + float(gps_data["GPS GPSLongitude"].values[1])/60 + float(gps_data["GPS GPSLongitude"].values[2].num)/gps_data["GPS GPSLongitude"].values[2].den/3600
-            try:
-                altitude = parse_fraction(str(gps_data.get("GPS GPSAltitude", "0/1")))
-            except Exception as e:
+            if "GPSLatitude" in gps_data and "GPSLongitude" in gps_data:
+                latitude = float(gps_data["GPSLatitude"]) + float(gps_data["GPSLatitude"])/60 + float(gps_data["GPSLatitude"])/gps_data["GPSLatitude"]/3600
+                longitude = float(gps_data["GPSLongitude"]) + float(gps_data["GPSLongitude"])/60 + float(gps_data["GPSLongitude"])/gps_data["GPSLongitude"]/3600
                 try:
-                    altitude = str(gps_data.get("GPS GPSAltitude"))
-                except:
+                    altitude = str(gps_data.get("GPSAltitude", "-1"))
+                except Exception as e:
                     print(f"Unable to get altitude")
 
-            timestamp = str(gps_data.get("Image DateTime", ""))
-            make = str(gps_data.get("Image Make", ""))
-            model = str(gps_data.get("Image Model", ""))
-            try:
-                bearing = (float(gps_data["GPS GPSImgDirection"].values[0].num) / gps_data["GPS GPSImgDirection"].values[0].den + rotation_angle) % 360 if "GPS GPSImgDirection" in gps_data else 0
-            except:
-                bearing = 0
-            img_url = upload_file_to_azure(image_path, f"{azure_folder}{file}", azure_config, make_public=True)
-            print(f"Uploaded {file} to Azure Blob Storage: {img_url}")
+                timestamp = str(gps_data.get("Image DateTime", ""))
+                make = str(gps_data.get("Image Make", ""))
+                model = str(gps_data.get("Image Model", ""))
+                try:
+                    bearing = (float(gps_data["GPSImgDirection"]) / gps_data["GPSImgDirection"] + rotation_angle) % 360 if "GPSImgDirection" in gps_data else 0
+                except:
+                    bearing = 0
+                img_url = upload_file_to_azure(image_path, f"{azure_folder}{file}", azure_config, make_public=True)
+                print(f"Uploaded {file} to Azure Blob Storage: {img_url}")
 
-            placemarks.append({
-                "latitude": latitude,
-                "longitude": longitude,
-                "altitude": altitude,
-                "timestamp": timestamp,
-                "make": make,
-                "model": model,
-                "bearing": bearing,
-                "file_url": img_url,
-            })
-        else:
-            missing_gps +=1
-            print(f"# images missing gps: {missing_gps}. {image} has no gps data")
+                placemarks.append({
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "altitude": altitude,
+                    "timestamp": timestamp,
+                    "make": make,
+                    "model": model,
+                    "bearing": bearing,
+                    "file_url": img_url,
+                })
+            else:
+                missing_gps +=1
+                print(f"# images missing gps: {missing_gps}. {image} has no gps data")
 
 if __name__ == "__main__":
     create_kml_file(placemarks, output_file)

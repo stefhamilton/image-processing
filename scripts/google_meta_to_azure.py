@@ -110,11 +110,11 @@ def get_photos_metadata(service, start_time, end_time):
 
 if __name__ == "__main__":
     try:
-        azure_config = '/Users/stefanhamilton/dev/image-processing/config.ini'
+        azure_config = 'crendentials/azure_config.ini'
         # Authenticate and build the Google Photos API client
         print("Getting google creds")
-        client_secret_file = "/Users/stefanhamilton/dev/image-processing/scripts/credentials.json"
-        refresh_token_file = "/Users/stefanhamilton/dev/image-processing/scripts/refresh_token.json"
+        client_secret_file = "credentials/client_secret.json"
+        refresh_token_file = "credentials/refresh_token.json"
         SCOPES = [
         "https://www.googleapis.com/auth/photoslibrary.readonly",
         "https://www.googleapis.com/auth/bigquery",

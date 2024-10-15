@@ -3,7 +3,7 @@ import json
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-admin_creds = "/Users/stefanhamilton/dev/image-processing/scripts/credentials_google_admin.json"
+admin_creds = "credentials/credentials_google_admin.json"
 
 # Define the required scopes
 SCOPES = ["https://www.googleapis.com/auth/photoslibrary.readonly"]
